@@ -12,6 +12,8 @@ var NotFound error
 func init() {
 	NotFound = errors.New("Item missing")
 	configs = make(map[string]*Config)
+	hosts = make(map[string]string)
+	master = &sync.RWMutex{}
 }
 
 var (
@@ -19,12 +21,20 @@ var (
 	SecondDelims = [2]string{"{{", "}}"}
 )
 
-var configs map[string]*Config
+var (
+	configs map[string]*Config
+	hosts   map[string]string
+	master  *sync.RWMutex
+)
 
 type Config struct {
-	Name         string
-	Hosts        map[string]*Host
-	Lock         *sync.RWMutex
+	Name  string
+	Hosts map[string]*Host
+	Lock  *sync.RWMutex
+	TemplateData
+}
+
+type TemplateData struct {
 	Masters      map[string]*MasterTemplate
 	Features     map[string]*FeatureTemplate
 	FeatureLists map[string][]string
@@ -36,6 +46,7 @@ type Host struct {
 	Compiled map[string]*template.Template
 	Features map[string]bool
 	Lock     *sync.RWMutex
+	TemplateData
 }
 
 func (c *Config) GenerateFor(n string) error {
