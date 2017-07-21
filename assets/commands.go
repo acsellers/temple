@@ -1,7 +1,10 @@
 package assets
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -168,6 +171,7 @@ func SaveAsset(config, host, folder, name string, data []byte) error {
 			c.Lock.Unlock()
 			return NotFound
 		}
+		f.Times[name] = time.Now()
 		f.Assets[name] = data
 		f.ETags[name] = fmt.Sprintf("%x", time.Now().Unix())
 		c.Lock.Unlock()
@@ -179,6 +183,7 @@ func SaveAsset(config, host, folder, name string, data []byte) error {
 			c.Lock.Unlock()
 			return NotFound
 		}
+		f.Times[name] = time.Now()
 		f.Assets[name] = data
 		f.ETags[name] = fmt.Sprintf("%x", time.Now().Unix())
 		c.Lock.Unlock()
@@ -208,6 +213,7 @@ func DeleteAsset(config, host, folder, name string) error {
 		}
 		delete(f.Assets, name)
 		delete(f.ETags, name)
+		delete(f.Times, name)
 	} else {
 		h, ok := c.Hosts[host]
 		if !ok {
@@ -225,8 +231,84 @@ func DeleteAsset(config, host, folder, name string) error {
 		}
 		delete(f.Assets, name)
 		delete(f.ETags, name)
+		delete(f.Times, name)
+
 	}
 	c.Lock.Unlock()
 
+	return nil
+}
+
+func GetAsset(config, host, folder, name string) (io.ReadSeeker, map[string]string, time.Time, error) {
+	master.RLock()
+	c, ok := configs[config]
+	master.RUnlock()
+	if !ok {
+		return nil, nil, time.Time{}, NotFound
+	}
+	if host == "" {
+		c.Lock.RLock()
+		if f, ok := c.AssetFolders[folder]; ok {
+			if a, ok := f.Assets[name]; ok {
+				headers := make(map[string]string)
+				for h, v := range f.Headers {
+					headers[h] = v
+				}
+				if f.Expires != nil {
+					headers["Expires"] = f.Expires.String()
+				}
+				headers["ETag"] = f.ETags[name]
+				c.Lock.RUnlock()
+				return bytes.NewReader(a), headers, f.Times[name], nil
+			}
+		}
+		c.Lock.RUnlock()
+		return nil, nil, time.Time{}, NotFound
+	}
+	c.Lock.RLock()
+	h, ok := c.Hosts[host]
+	if !ok {
+		c.Lock.RUnlock()
+		return GetAsset(config, "", folder, name)
+	}
+	f, ok := h.Overrides[folder]
+	if !ok {
+		c.Lock.RUnlock()
+		return GetAsset(config, "", folder, name)
+	}
+	a, ok := f.Assets[name]
+	if !ok {
+		c.Lock.RUnlock()
+		return GetAsset(config, "", folder, name)
+	}
+	headers := make(map[string]string)
+	if of, ok := c.AssetFolders[folder]; ok {
+		for h, v := range of.Headers {
+			headers[h] = v
+		}
+		if of.Expires != nil {
+			headers["Expires"] = f.Expires.String()
+		}
+	}
+	for h, v := range f.Headers {
+		headers[h] = v
+	}
+	if f.Expires != nil {
+		headers["Expires"] = f.Expires.String()
+	}
+	headers["ETag"] = f.ETags[name]
+	c.Lock.RUnlock()
+	return bytes.NewReader(a), headers, f.Times[name], nil
+}
+
+func ServeAsset(config, host, folder, name string, w http.ResponseWriter, r *http.Request) error {
+	rs, h, t, err := GetAsset(config, host, folder, name)
+	if err != nil {
+		return err
+	}
+	for k, v := range h {
+		w.Header().Add(k, v)
+	}
+	http.ServeContent(w, r, name, t, rs)
 	return nil
 }

@@ -31,6 +31,7 @@ type Config struct {
 
 type AssetFolder struct {
 	Assets  map[string][]byte
+	Times   map[string]time.Time
 	ETags   map[string]string
 	Headers map[string]string
 	Expires *BigDuration
@@ -78,6 +79,10 @@ func (bd BigDuration) FromNow() time.Time {
 	return time.Now().
 		AddDate(bd.Years, bd.Months, bd.Days).
 		Add(time.Duration(bd.Hours) * time.Hour)
+}
+
+func (bd BigDuration) String() string {
+	return bd.FromNow().Format(time.RFC1123)
 }
 
 type Host struct {

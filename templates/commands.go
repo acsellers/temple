@@ -94,21 +94,29 @@ func SaveFeature(config, host, name, tmpl string) error {
 	return nil
 }
 
-func DeleteFeature(config, name string) error {
+func DeleteFeature(config, host, name string) error {
 	if c, ok := configs[config]; ok {
-		c.Lock.Lock()
-		delete(c.Features, name)
-		for n, l := range c.FeatureLists {
-			nl := make([]string, 0, len(l)-1)
-			for _, li := range l {
-				if li != name {
-					nl = append(nl, li)
+		if host == "" {
+			c.Lock.Lock()
+			delete(c.Features, name)
+			for n, l := range c.FeatureLists {
+				nl := make([]string, 0, len(l)-1)
+				for _, li := range l {
+					if li != name {
+						nl = append(nl, li)
+					}
 				}
+				c.FeatureLists[n] = nl
 			}
-			c.FeatureLists[n] = nl
+			c.Lock.Unlock()
+			return c.Regenerate()
+		} else {
+			c.Lock.RLock()
+			_, override := c.Features[name]
+			if override {
+			} else {
+			}
 		}
-		c.Lock.Unlock()
-		return c.Regenerate()
 	}
 	return NotFound
 }

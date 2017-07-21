@@ -1,70 +1,43 @@
 package main
 
 import (
-	"bytes"
+	"flag"
 	"fmt"
-	htemplate "html/template"
 	"log"
-	ttemplate "text/template"
+	"net/http"
+	"os"
+	"os/signal"
+
+	"github.com/acsellers/temple/routing"
 )
 
-type Client struct {
-	Features []string
-	Name     string
-	Site     *htemplate.Template
-}
-
-var MT *MasterTemplate
+var (
+	port    = flag.Int("port", 8008, "Port for Web")
+	apiport = flag.Int("api", 9009, "Port for API")
+	cfg     = flag.String("config", "config.json", "Config File")
+)
 
 func init() {
-	MT = &MasterTemplate{}
-	var err error
-	var mt *ttemplate.Template
-	mt, err = ttemplate.New("master").Delims("[[", "]]").Parse(Master)
-	if err != nil {
-		log.Fatal(err)
-	}
-	MT.Template = mt
-	MT.Features = make(map[string][]FeatureTemplate)
-	for name, top := range Tops {
-		tt, err := ttemplate.New(name).Parse(top)
-		if err != nil {
-			log.Fatal(name, err)
-		}
-		MT.Features["topbar"] = append(
-			MT.Features["topbar"],
-			FeatureTemplate{Name: name, Template: tt},
-		)
-	}
-	for name, nav := range Navs {
-		tt, err := ttemplate.New(name).Parse(nav)
-		if err != nil {
-			log.Fatal(name, err)
-		}
-		MT.Features["navbar"] = append(
-			MT.Features["navbar"],
-			FeatureTemplate{Name: name, Template: tt},
-		)
-	}
-	for name, foot := range Foots {
-		tt, err := ttemplate.New(name).Parse(foot)
-		if err != nil {
-			log.Fatal(name, err)
-		}
-		MT.Features["footer"] = append(
-			MT.Features["footer"],
-			FeatureTemplate{Master: MT, Name: name, Template: tt},
-		)
-	}
+	flag.Parse()
+}
+func main() {
+	go web()
+	go api()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	<-c
 }
 
-func main() {
-	c := &Client{Features: []string{"navbar.one", "topbar.three", "footer.two"}}
-	fmt.Println(MT.Generate(c))
-	b := &bytes.Buffer{}
-	c.Site.Execute(b, map[string]interface{}{
-		"Title":   "Test",
-		"Content": "<script src='/test.js'></script>",
-	})
-	fmt.Println(b.String())
+func web() {
+	w := http.NewServeMux()
+	w.Handle("/", routing.MainHandler())
+	fmt.Println("Starting web on ", *port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), w))
+}
+
+func api() {
+	m := http.NewServeMux()
+	m.Handle("/", routing.MainHandler())
+	fmt.Println("Starting API on ", *apiport)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *apiport), m))
 }
